@@ -1,469 +1,385 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>UFOfighter - Arena Combat</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background-color: #000;
-            font-family: Arial, sans-serif;
-        }
-        canvas {
-            border: 2px solid #00ffff;
-            background-color: #141432;
-            display: block;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UFOfighter</title>
+
+<style>
+body{
+    margin:0;
+    background:#000;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+    font-family:Arial;
+}
+
+canvas{
+    border:2px solid cyan;
+    background:#141432;
+}
+</style>
+
 </head>
 <body>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        
-        const SCREEN_WIDTH = 800;
-        const SCREEN_HEIGHT = 600;
-        const FPS = 60;
 
-        // Game state
-        let player = {
-            x: SCREEN_WIDTH / 2,
-            y: SCREEN_HEIGHT / 2,
-            radius: 20,
-            vx: 0,
-            vy: 0,
-            boost: false,
-            bullets: [],
-            last_shot: 0,
-            rapid_fire: false,
-            rapid_fire_end_time: 0
-        };
+<canvas id="game" width="800" height="600"></canvas>
 
-        let enemies = [];
-        let powerups = [];
-        let score = 0;
-        let combo = 0;
-        let combo_timer = 0;
-        let paused = false;
-        let game_over = false;
-        let game_over_time = 0;
-        let start_time = Date.now();
-        let enemy_spawn_counter = 0;
-        let difficulty = 0;
+<script>
 
-        // Input handling
-        const keys = {};
-        window.addEventListener('keydown', (e) => {
-            keys[e.key.toLowerCase()] = true;
-            
-            if (e.key.toLowerCase() === 'c') {
-                paused = !paused;
-            }
-            if (e.key.toLowerCase() === 'r' && game_over) {
-                restart_game();
-            }
-            if (e.key === ' ') {
-                player.boost = true;
-                e.preventDefault();
-            }
-        });
+const canvas = document.getElementById("game")
+const ctx = canvas.getContext("2d")
 
-        window.addEventListener('keyup', (e) => {
-            keys[e.key.toLowerCase()] = false;
-            if (e.key === ' ') {
-                player.boost = false;
-            }
-        });
+const W = canvas.width
+const H = canvas.height
 
-        canvas.addEventListener('mousemove', (e) => {
-            // Update mouse position for aiming
-        });
+/* ---------------- PLAYER ---------------- */
 
-        canvas.addEventListener('mousedown', (e) => {
-            if (!paused && !game_over) {
-                const rect = canvas.getBoundingClientRect();
-                const mouseX = e.clientX - rect.left;
-                const mouseY = e.clientY - rect.top;
-                create_bullet(player.x, player.y, mouseX, mouseY);
-            }
-        });
+let player = {
+    x: W/2,
+    y: H/2,
+    r: 20,
+    boost:false,
+    bullets:[],
+    rapid:false,
+    rapidEnd:0,
+    lastShot:0
+}
 
-        canvas.addEventListener('mousemove', (e) => {
-            // For continuous fire
-            if (!paused && !game_over) {
-                const rect = canvas.getBoundingClientRect();
-                window.mouseX = e.clientX - rect.left;
-                window.mouseY = e.clientY - rect.top;
-            }
-        });
+/* ---------------- GAME STATE ---------------- */
 
-        // Mouse tracking for continuous fire
-        let mouseDown = false;
-        window.addEventListener('mousedown', () => { mouseDown = true; });
-        window.addEventListener('mouseup', () => { mouseDown = false; });
+let enemies=[]
+let powerups=[]
+let score=0
+let combo=0
+let comboTimer=0
+let paused=false
+let gameOver=false
+let startTime=Date.now()
 
-        function spawn_enemy() {
-            const side = ['top', 'bottom', 'left', 'right'][Math.floor(Math.random() * 4)];
-            let x, y;
+/* ---------------- INPUT ---------------- */
 
-            if (side === 'top') {
-                x = Math.random() * SCREEN_WIDTH;
-                y = -30;
-            } else if (side === 'bottom') {
-                x = Math.random() * SCREEN_WIDTH;
-                y = SCREEN_HEIGHT + 30;
-            } else if (side === 'left') {
-                x = -30;
-                y = Math.random() * SCREEN_HEIGHT;
-            } else {
-                x = SCREEN_WIDTH + 30;
-                y = Math.random() * SCREEN_HEIGHT;
-            }
+const keys={}
+let mouse={x:W/2,y:H/2,down:false}
 
-            enemies.push({
-                x: x,
-                y: y,
-                speed: 1.5 + (difficulty * 0.2),
-                health: 1,
-                radius: 12
-            });
-        }
+window.addEventListener("keydown",e=>{
+    keys[e.key.toLowerCase()]=true
 
-        function spawn_powerup(x, y) {
-            const type = Math.random() > 0.5 ? 'rapid_fire' : 'score';
-            powerups.push({
-                x: x,
-                y: y,
-                type: type,
-                radius: 8,
-                lifetime: 300,
-                age: 0
-            });
-        }
+    if(e.key===" ") player.boost=true
+    if(e.key==="c") paused=!paused
+    if(e.key==="r" && gameOver) restart()
+})
 
-        function create_bullet(x, y, targetX, targetY) {
-            const dx = targetX - x;
-            const dy = targetY - y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+window.addEventListener("keyup",e=>{
+    keys[e.key.toLowerCase()]=false
+    if(e.key===" ") player.boost=false
+})
 
-            if (dist > 0) {
-                player.bullets.push({
-                    x: x,
-                    y: y,
-                    vx: (dx / dist) * 8,
-                    vy: (dy / dist) * 8,
-                    radius: 4
-                });
-            }
-            player.last_shot = Date.now();
-        }
+canvas.addEventListener("mousemove",e=>{
+    const rect=canvas.getBoundingClientRect()
+    mouse.x=e.clientX-rect.left
+    mouse.y=e.clientY-rect.top
+})
 
-        function update_enemies() {
-            for (let i = enemies.length - 1; i >= 0; i--) {
-                const enemy = enemies[i];
+window.addEventListener("mousedown",()=>mouse.down=true)
+window.addEventListener("mouseup",()=>mouse.down=false)
 
-                // Move toward player
-                const dx = player.x - enemy.x;
-                const dy = player.y - enemy.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
+/* ---------------- SPAWN ---------------- */
 
-                if (dist > 1) {
-                    enemy.x += (dx / dist) * enemy.speed;
-                    enemy.y += (dy / dist) * enemy.speed;
-                }
+function spawnEnemy(){
 
-                // Check collision with bullets
-                let hit = false;
-                for (let j = player.bullets.length - 1; j >= 0; j--) {
-                    const bullet = player.bullets[j];
-                    const bullet_dist = Math.sqrt((bullet.x - enemy.x) ** 2 + (bullet.y - enemy.y) ** 2);
+    const side=Math.floor(Math.random()*4)
+    let x,y
 
-                    if (bullet_dist < 25) {
-                        enemy.health -= 1;
-                        player.bullets.splice(j, 1);
-                        hit = true;
-                        break;
-                    }
-                }
+    if(side===0){x=Math.random()*W;y=-20}
+    if(side===1){x=Math.random()*W;y=H+20}
+    if(side===2){x=-20;y=Math.random()*H}
+    if(side===3){x=W+20;y=Math.random()*H}
 
-                if (hit && enemy.health <= 0) {
-                    enemies.splice(i, 1);
-                    combo += 1;
-                    combo_timer = 120;
-                    const bonus = 10 + (combo * 5);
-                    score += bonus;
+    enemies.push({
+        x,y,
+        r:12,
+        speed:1.5
+    })
+}
 
-                    // Spawn powerup 30% of the time
-                    if (Math.random() < 0.3) {
-                        spawn_powerup(enemy.x, enemy.y);
-                    }
-                    continue;
-                }
+function spawnPower(x,y){
 
-                // Check collision with player
-                const player_dist = Math.sqrt((player.x - enemy.x) ** 2 + (player.y - enemy.y) ** 2);
-                if (player_dist < 40) {
-                    game_over = true;
-                    game_over_time = Date.now();
-                }
-            }
-        }
+    const type=Math.random()<0.5?"score":"rapid"
 
-        function update_powerups() {
-            for (let i = powerups.length - 1; i >= 0; i--) {
-                const powerup = powerups[i];
-                powerup.age += 1;
+    powerups.push({
+        x,y,
+        r:8,
+        type,
+        life:300
+    })
+}
 
-                if (powerup.age > powerup.lifetime) {
-                    powerups.splice(i, 1);
-                    continue;
-                }
+/* ---------------- BULLETS ---------------- */
 
-                // Check collection by player
-                const dist = Math.sqrt((powerup.x - player.x) ** 2 + (powerup.y - player.y) ** 2);
-                if (dist < 35) {
-                    if (powerup.type === 'score') {
-                        score += 50;
-                    } else if (powerup.type === 'rapid_fire') {
-                        player.rapid_fire = true;
-                        player.rapid_fire_end_time = Date.now() + 5000;
-                    }
-                    powerups.splice(i, 1);
-                }
-            }
-        }
+function shoot(tx,ty){
 
-        function update() {
-            if (!paused && !game_over) {
-                // Handle movement
-                let dx = 0;
-                let dy = 0;
+    const dx=tx-player.x
+    const dy=ty-player.y
+    const d=Math.hypot(dx,dy)
 
-                if (keys['a']) dx -= 4;
-                if (keys['d']) dx += 4;
-                if (keys['w']) dy -= 4;
-                if (keys['s']) dy += 4;
-                
-                // Apply boost
-                if (player.boost) {
-                    dx = Math.floor(dx * 1.5);
-                    dy = Math.floor(dy * 1.5);
-                }
+    if(d===0)return
 
-                // Move player with boundary checking
-                player.x = Math.max(10, Math.min(player.x + dx, SCREEN_WIDTH - 30));
-                player.y = Math.max(10, Math.min(player.y + dy, SCREEN_HEIGHT - 30));
+    player.bullets.push({
+        x:player.x,
+        y:player.y,
+        vx:dx/d*8,
+        vy:dy/d*8,
+        r:4
+    })
 
-                // Continuous fire
-                if (mouseDown && window.mouseX && window.mouseY) {
-                    const current_time = Date.now();
-                    const fire_cooldown = player.rapid_fire ? 20 : 50;
-                    if (current_time - player.last_shot > fire_cooldown) {
-                        create_bullet(player.x, player.y, window.mouseX, window.mouseY);
-                    }
-                }
+    player.lastShot=Date.now()
+}
 
-                // Update bullets
-                for (let i = player.bullets.length - 1; i >= 0; i--) {
-                    const bullet = player.bullets[i];
-                    bullet.x += bullet.vx;
-                    bullet.y += bullet.vy;
+/* ---------------- UPDATE ---------------- */
 
-                    if (bullet.y < -10 || bullet.y > SCREEN_HEIGHT + 10 || 
-                        bullet.x < -10 || bullet.x > SCREEN_WIDTH + 10) {
-                        player.bullets.splice(i, 1);
-                    }
-                }
+function update(){
 
-                update_enemies();
-                update_powerups();
+if(!paused && !gameOver){
 
-                // Combo timer
-                if (combo_timer > 0) {
-                    combo_timer -= 1;
-                } else {
-                    combo = 0;
-                }
+/* movement */
 
-                // Spawn enemies based on difficulty
-                enemy_spawn_counter += 1;
-                const spawn_rate = Math.max(20, 100 - Math.floor(difficulty * 8));
-                if (enemy_spawn_counter > spawn_rate) {
-                    enemy_spawn_counter = 0;
-                    spawn_enemy();
-                }
+let speed=player.boost?6:4
 
-                // Increase difficulty over time
-                const elapsed_s = (Date.now() - start_time) / 1000;
-                difficulty = elapsed_s / 15;
-            }
+if(keys["w"]) player.y-=speed
+if(keys["s"]) player.y+=speed
+if(keys["a"]) player.x-=speed
+if(keys["d"]) player.x+=speed
 
-            // Check if rapid fire has expired
-            if (player.rapid_fire && Date.now() > player.rapid_fire_end_time) {
-                player.rapid_fire = false;
-            }
+player.x=Math.max(20,Math.min(W-20,player.x))
+player.y=Math.max(20,Math.min(H-20,player.y))
 
-            draw();
-        }
+/* shooting */
 
-        function draw() {
-            // Clear canvas
-            ctx.fillStyle = '#141432';
-            ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+if(mouse.down){
 
-            // Draw grid background
-            ctx.strokeStyle = '#282850';
-            ctx.lineWidth = 1;
-            for (let x = 0; x < SCREEN_WIDTH; x += 50) {
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, SCREEN_HEIGHT);
-                ctx.stroke();
-            }
-            for (let y = 0; y < SCREEN_HEIGHT; y += 50) {
-                ctx.beginPath();
-                ctx.moveTo(0, y);
-                ctx.lineTo(SCREEN_WIDTH, y);
-                ctx.stroke();
-            }
+let cd=player.rapid?40:120
 
-            if (!game_over) {
-                // Draw enemies
-                for (const enemy of enemies) {
-                    ctx.fillStyle = '#ff6464';
-                    ctx.beginPath();
-                    ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
-                    ctx.fill();
-                }
+if(Date.now()-player.lastShot>cd){
+shoot(mouse.x,mouse.y)
+}
 
-                // Draw powerups
-                for (const powerup of powerups) {
-                    const color = powerup.type === 'rapid_fire' ? '#ff6400' : '#ffd700';
-                    ctx.fillStyle = color;
-                    ctx.beginPath();
-                    ctx.arc(powerup.x, powerup.y, powerup.radius, 0, Math.PI * 2);
-                    ctx.fill();
+}
 
-                    ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 2;
-                    ctx.beginPath();
-                    ctx.arc(powerup.x, powerup.y, powerup.radius, 0, Math.PI * 2);
-                    ctx.stroke();
-                }
+/* bullets */
 
-                // Draw bullets
-                for (const bullet of player.bullets) {
-                    ctx.fillStyle = '#00ff00';
-                    ctx.beginPath();
-                    ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-                    ctx.fill();
-                }
+for(let i=player.bullets.length-1;i>=0;i--){
 
-                // Draw player
-                ctx.fillStyle = '#00ffff';
-                ctx.beginPath();
-                ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-                ctx.fill();
+let b=player.bullets[i]
 
-                ctx.strokeStyle = '#64ffff';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-                ctx.stroke();
+b.x+=b.vx
+b.y+=b.vy
 
-                // Draw HUD
-                ctx.fillStyle = '#ffffff';
-                ctx.font = '36px Arial';
+if(b.x<-10||b.x>W+10||b.y<-10||b.y>H+10)
+player.bullets.splice(i,1)
+}
 
-                const elapsed_s = (Date.now() - start_time) / 1000;
-                ctx.fillText(`Time: ${Math.floor(elapsed_s)}s`, 10, 35);
-                ctx.fillText(`Score: ${score}`, 10, 75);
+/* enemies */
 
-                ctx.font = '24px Arial';
-                ctx.fillText(`Enemies: ${enemies.length}`, 10, 105);
+for(let i=enemies.length-1;i>=0;i--){
 
-                // Draw combo
-                if (combo > 0) {
-                    const combo_color = combo_timer > 60 ? '#ffff64' : '#ff9632';
-                    ctx.fillStyle = combo_color;
-                    ctx.font = '36px Arial';
-                    ctx.fillText(`COMBO x${combo}!`, SCREEN_WIDTH - 280, 35);
-                }
+let e=enemies[i]
 
-                // Draw rapid fire status
-                if (player.rapid_fire) {
-                    const remaining_ms = Math.max(0, player.rapid_fire_end_time - Date.now());
-                    const remaining_s = (remaining_ms / 1000).toFixed(1);
-                    ctx.fillStyle = '#ffc864';
-                    ctx.font = '24px Arial';
-                    ctx.fillText(`Rapid Fire: ${remaining_s}s`, 10, 135);
-                }
+let dx=player.x-e.x
+let dy=player.y-e.y
+let d=Math.hypot(dx,dy)
 
-                // Draw pause screen
-                if (paused) {
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-                    ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+e.x+=dx/d*e.speed
+e.y+=dy/d*e.speed
 
-                    ctx.fillStyle = '#ffffff';
-                    ctx.font = '36px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText('Paused (press C to resume)', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
-                    ctx.textAlign = 'left';
-                }
-            } else {
-                // Game over screen
-                const elapsed_s = (Date.now() - start_time) / 1000;
+/* bullet collision */
 
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+for(let j=player.bullets.length-1;j>=0;j--){
 
-                ctx.fillStyle = '#ff3232';
-                ctx.font = 'bold 48px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('YOU DIED!', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 80);
+let b=player.bullets[j]
 
-                ctx.fillStyle = '#ffffff';
-                ctx.font = '36px Arial';
-                ctx.fillText(`Final Score: ${score}`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 10);
-                ctx.fillText(`Survived: ${Math.floor(elapsed_s)}s`, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 60);
+if(Math.hypot(b.x-e.x,b.y-e.y)<20){
 
-                ctx.font = '24px Arial';
-                ctx.fillText('(Press R to restart)', SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 120);
-                ctx.textAlign = 'left';
-            }
-        }
+player.bullets.splice(j,1)
+enemies.splice(i,1)
 
-        function restart_game() {
-            player.x = SCREEN_WIDTH / 2;
-            player.y = SCREEN_HEIGHT / 2;
-            player.bullets = [];
-            player.rapid_fire = false;
-            enemies = [];
-            powerups = [];
-            score = 0;
-            combo = 0;
-            combo_timer = 0;
-            paused = false;
-            game_over = false;
-            start_time = Date.now();
-            enemy_spawn_counter = 0;
-            difficulty = 0;
-        }
+score+=10
+combo++
+comboTimer=120
 
-        // Game loop
-        setInterval(update, 1000 / FPS);
+if(Math.random()<0.3)
+spawnPower(e.x,e.y)
 
-        console.log('Controls: WASD to move, Space for speed boost, Mouse to aim and shoot, C to pause/resume, R to restart');
-    </script>
+break
+}
+
+}
+
+/* player hit */
+
+if(Math.hypot(player.x-e.x,player.y-e.y)<30)
+gameOver=true
+}
+
+/* powerups */
+
+for(let i=powerups.length-1;i>=0;i--){
+
+let p=powerups[i]
+
+p.life--
+
+if(p.life<=0){
+powerups.splice(i,1)
+continue
+}
+
+if(Math.hypot(player.x-p.x,player.y-p.y)<30){
+
+if(p.type==="score") score+=50
+
+if(p.type==="rapid"){
+player.rapid=true
+player.rapidEnd=Date.now()+5000
+}
+
+powerups.splice(i,1)
+}
+}
+
+/* combo */
+
+if(comboTimer>0) comboTimer--
+else combo=0
+
+/* rapid expire */
+
+if(player.rapid && Date.now()>player.rapidEnd)
+player.rapid=false
+
+/* spawn enemies */
+
+if(Math.random()<0.02)
+spawnEnemy()
+
+}
+
+draw()
+requestAnimationFrame(update)
+
+}
+
+/* ---------------- DRAW ---------------- */
+
+function draw(){
+
+ctx.fillStyle="#141432"
+ctx.fillRect(0,0,W,H)
+
+/* player */
+
+ctx.fillStyle="cyan"
+ctx.beginPath()
+ctx.arc(player.x,player.y,player.r,0,Math.PI*2)
+ctx.fill()
+
+/* bullets */
+
+ctx.fillStyle="lime"
+
+player.bullets.forEach(b=>{
+ctx.beginPath()
+ctx.arc(b.x,b.y,b.r,0,Math.PI*2)
+ctx.fill()
+})
+
+/* enemies */
+
+ctx.fillStyle="red"
+
+enemies.forEach(e=>{
+ctx.beginPath()
+ctx.arc(e.x,e.y,e.r,0,Math.PI*2)
+ctx.fill()
+})
+
+/* powerups */
+
+powerups.forEach(p=>{
+
+ctx.fillStyle=p.type==="rapid"?"orange":"gold"
+
+ctx.beginPath()
+ctx.arc(p.x,p.y,p.r,0,Math.PI*2)
+ctx.fill()
+
+})
+
+/* HUD */
+
+ctx.fillStyle="white"
+ctx.font="24px Arial"
+
+let time=Math.floor((Date.now()-startTime)/1000)
+
+ctx.fillText("Time: "+time,10,30)
+ctx.fillText("Score: "+score,10,60)
+
+if(combo>1)
+ctx.fillText("COMBO x"+combo,600,40)
+
+if(player.rapid)
+ctx.fillText("Rapid Fire!",10,90)
+
+/* game over */
+
+if(gameOver){
+
+ctx.fillStyle="rgba(0,0,0,0.6)"
+ctx.fillRect(0,0,W,H)
+
+ctx.fillStyle="red"
+ctx.font="50px Arial"
+ctx.textAlign="center"
+
+ctx.fillText("YOU DIED",W/2,H/2)
+
+ctx.font="25px Arial"
+ctx.fillText("Press R to Restart",W/2,H/2+50)
+
+ctx.textAlign="left"
+
+}
+
+}
+
+/* ---------------- RESET ---------------- */
+
+function restart(){
+
+player.x=W/2
+player.y=H/2
+player.bullets=[]
+player.rapid=false
+
+enemies=[]
+powerups=[]
+
+score=0
+combo=0
+gameOver=false
+startTime=Date.now()
+
+}
+
+/* start game */
+
+spawnEnemy()
+update()
+
+</script>
+
 </body>
 </html>
