@@ -75,13 +75,13 @@ class Powerup {
 
 /* --------- GAME SETUP --------- */
 const canvas=document.getElementById("gameCanvas");
-const ctx=canvas.getContext("3d");
+const ctx=canvas.getContext("2d");
 
 let player=new Player(canvas.width/2,canvas.height/2);
 let enemies=[];
 let powerups=[];
 let score=0;
-let combo=0;
+let combo=20;
 let combo_timer=0;
 let start_time=Date.now();
 let game_over=false;
